@@ -110,9 +110,12 @@ design/06 の `CollectedItem` を**実データに当てて**過不足を見つ�
 3. 「入らなかった情報・無駄なフィールド・型で詰まった点」を `findings.md` §2 に書く
 
 **完了確認**
-- [ ] 2 ソースとも normalizer が例外なく通る（url null・タグ空も含む）
-- [ ] `publishedAt` が両ソースとも UTC ISO で揃っている（Qiita の +09:00 が消えている）
+- [x] 2 ソースとも normalizer が例外なく通る（url null・タグ空も含む）
+- [x] `publishedAt` が両ソースとも UTC ISO で揃っている（Qiita の +09:00 が消えている）
 - [ ] findings.md §2 に 1 行以上メモがある
+
+**残タスク**
+- `SpikeItem` のフィールド過不足は、抽出・集計・検知まで全体像を確認してから `findings.md` §2 で最終判断する
 
 **詰まったら**
 - Qiita の日付がズレる → `new Date("...+09:00").toISOString()` で UTC 化してから `slice(0, 10)`（先に slice すると JST 日付になる）
@@ -153,3 +156,8 @@ spike/types.ts の normalizer を通した上で以下をレポート:
 
 - Qiita タグ頻度トップ（verify.md）が seed 辞書の最初の材料
 - HN はタグ無し＝タイトル辞書マッチ（b 層）が主役になる前提で Day2 の抽出を組む
+
+## Day 1 中断メモ
+
+- Day1-4 の normalizer 実装と先頭 100 件の UTC・欠損値確認まで完了
+- `SpikeItem` のフィールド過不足は、抽出・集計・検知まで確認後に `findings.md` §2 へ記録する
