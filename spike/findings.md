@@ -11,9 +11,10 @@
 
 ## 2. スキーマの過不足（design/06 CollectedItem / 03 documents・occurrences への反映）
 
+- 残タスク: 抽出・集計・検知まで全体像を確認してから、`SpikeItem` のフィールド過不足を最終判断する
 - 足りなかったフィールド:
 - 不要だったフィールド:
-- 型・正規化で詰まった点（UTC / ID / タグ）:
+- 型・正規化で詰まった点（UTC / ID / タグ）: HN の URL 欠損は `undefined` になるため `null` に統一。HN の Unix 秒と Qiita の `+09:00` 日時を UTC ISO へ統一。Qiita のタグはオブジェクト配列から名前の配列へ変換した
 
 ## 3. 抽出の品質（design/05 への反映）
 
