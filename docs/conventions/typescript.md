@@ -2,12 +2,12 @@
 
 対象: `apps/api`（Node API）/ `workers`（収集ワーカー）/ `packages/*`（共有ライブラリ）。React 固有は [react.md](react.md)。共通原則は [README.md](README.md)。
 
-スタックの主軸。フロント〜API〜ワーカーで**型を共有**するのが TypeScript を選んだ理由（[`design/02`](../../design/02_architecture.md)）なので、「型を効かせる」ことを最優先の規約とする。
+スタックの主軸。フロント〜API で**型を共有**するのが TypeScript を選んだ理由（[`design/02_tech_stack.md`](../../design/02_tech_stack.md)）なので、「型を効かせる」ことを最優先の規約とする。境界の契約は `packages/shared` に zod スキーマとして置き、api と web が同じものを import する（[`design/03_architecture.md`](../../design/03_architecture.md)）。
 
 ## 前提
 
 - **Node 22 LTS / TypeScript 5.7+**。`tsconfig.base.json` を各パッケージが `extends` する。`strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` が前提（緩めない）。
-- 整形は **Prettier**（2スペース・ダブルクォート・セミコロンあり・`printWidth 100`・末尾カンマ `all`）。**整形はレビューで指摘しない** — `npm run format` が直す。
+- 整形は **Prettier**（2スペース・ダブルクォート・セミコロンあり・`printWidth 100`・末尾カンマ `all`）。**整形はレビューで指摘しない** — `pnpm format` が直す。
 - 静的チェックは **ESLint（type-aware）+ tsc**。下記ルールの多くは [`eslint.config.mjs`](../../eslint.config.mjs) が自動で fail させる。本書は「なぜそのルールか」と、ツールが見ない設計面を補う。
 - ESM (`"type": "module"`)。`import`/`export` のみ。`require` は使わない。
 
@@ -23,7 +23,7 @@
 | 対象 | 規則 | 例 |
 |---|---|---|
 | 変数・関数・メソッド | `camelCase` | `fetchWindow`, `termSlug` |
-| 型・interface・class・enum | `PascalCase` | `SourceAdapter`, `DayStat` |
+| 型・interface・class・enum | `PascalCase` | `UserDto`, `ApiError` |
 | 定数（モジュール定数） | `UPPER_SNAKE_CASE` | `MIN_POINTS`, `MAX_BODY_LENGTH` |
 | 型パラメータ | 意味のある名前か `T`/`K`/`V` | `<TItem>`, `<K, V>` |
 | boolean | `is`/`has`/`should`/`can` 接頭辞 | `isEmerging`, `hasEvidence` |
@@ -39,17 +39,17 @@
 
   ```ts
   // bad: 検証せず any で押し込む
-  function fromHit(hit: any): SpikeItem { return { ...hit }; }
+  function fromRow(row: any): UserDto { return { ...row }; }
 
   // good: 境界で unknown → スキーマで確定
   const HnHit = z.object({ objectID: z.string(), title: z.string(), points: z.number() });
-  function fromHnHit(raw: unknown): SpikeItem {
+  function fromApiPayload(raw: unknown): UserDto {
     const hit = HnHit.parse(raw); // ここを越えたら型は信頼してよい
     return { externalId: hit.objectID, title: hit.title, popularity: hit.points /* … */ };
   }
   ```
 
-- オブジェクトの形は **`interface`**、合併・交差・写像・タプルは **`type`**。迷ったら `interface`（参照実装 [`design/sprint1/refs/aggregate.ref.ts`](../../design/sprint1/refs/aggregate.ref.ts) もこの方針）。
+- オブジェクトの形は **`interface`**、合併・交差・写像・タプルは **`type`**。迷ったら `interface`。
 - **公開関数・公開メソッドには返り値型を明示**する（推論に頼らない）。内部の小さな関数は推論で良い。
 - ドメインの「種類」は**判別可能合併（discriminated union）**で表し、`switch` を網羅させる（ESLint `switch-exhaustiveness-check`）。
 
@@ -151,7 +151,7 @@ async function take(buckets: Map<string, Bucket>, host: string, rpm: number): Pr
 ## 非同期・並行（Node / ワーカー）
 
 - I/O は常に `async/await`。`.then()` チェーンを混在させない。
-- 収集は**部分失敗前提**（[`design/02`](../../design/02_architecture.md)）。1 件の失敗で全体を落とさない。リトライは**指数バックオフ + ジッタ**、上限で打ち切り（[`design/13`](../../design/13_testing_strategy.md) の収集テスト）。
+- 外部 I/O を伴うバッチは**部分失敗前提**で書く。1 件の失敗で全体を落とさない。リトライは**指数バックオフ + ジッタ**、上限で打ち切り。
 - 並行度は明示的に絞る（ホスト別レート、同時フェッチ上限）。無制限の `Promise.all(urls.map(fetch))` は禁止。
 - 外部 HTTP は `undici`/`fetch`。タイムアウトと `AbortSignal` を必ず付ける。リトライ・条件付き GET（ETag）はワーカー共通層に集約。
 - 時刻・乱数に直接依存しない（テストで固定できるよう注入可能にする）。`Date.now()` 直書きを避け、`clock` を渡す。
@@ -160,24 +160,25 @@ async function take(buckets: Map<string, Bucket>, host: string, rpm: number): Pr
 
 - `console.log` は使わない（ESLint `no-console`、`warn`/`error` のみ許可）。構造化ロガー（pino 等）を DI する。
 - ログは**構造化**（`logger.info({ host, status }, "fetch done")`）。文字列連結でフィールドを埋め込まない。
-- **秘密を出さない**: JWT・BYOK キー・`Authorization` ヘッダ・バインド済み SQL の値をログに残さない（[`design/04`](../../design/04_security_multitenant.md)）。
+- **秘密を出さない**: セッション ID・トークン・パスワードハッシュ・`Authorization` ヘッダ・バインド済み SQL の値をログに残さない（[`design/05_api.md`](../../design/05_api.md) の logger は body を出さない）。
 
 ## セキュリティ境界
 
 - 検証は信頼境界で。HTTP 入力・外部 API 応答・キュー投入データを `unknown`→zod で確定。内側は信頼。
-- **SQL は常にパラメータ化**。文字列連結禁止。テナント分離は `SET LOCAL app.tenant_id`（[sql.md](sql.md) / [`design/04`](../../design/04_security_multitenant.md)）。クライアント由来の tenant id を信頼しない（JWT クレームから取る）。
-- **SSRF 防御**（収集の最重要）: 取得先 URL はプライベート IP・メタデータ（`169.254.169.254`）・非 http(s)・内部ホストへのリダイレクトを `FetchContext` で拒否（[`design/13`](../../design/13_testing_strategy.md)）。
+- **SQL は常にパラメータ化**。文字列連結禁止（[sql.md](sql.md)）。Drizzle のクエリビルダは自動でパラメータ化されるが、`sql` テンプレートに値を差し込むときは補間位置を確認する。
+- **クライアント由来の識別子を信頼しない**。「誰か」はセッション（`c.get("user")`）から取る。リクエストボディの `userId` を認可判断に使わない（[`design/06_auth.md`](../../design/06_auth.md)）。
+- **SSRF 防御**: ユーザー入力の URL を取りに行く機能を作るときは、プライベート IP・メタデータ（`169.254.169.254`）・非 http(s)・内部ホストへのリダイレクトを拒否する。現時点でその機能は無いが、追加するときに必ず要る。
 - 入力長に上限（ReDoS / DoS 防御）。用語抽出の正規表現は破滅的バックトラックを避ける。
 - 秘密は環境変数 / Secret Manager から。コード・`.env.example` に実値を置かない。
 
 ## テスト
 
-- Vitest（単体・結合）/ supertest（API）/ Testcontainers（Postgres・ES）/ Playwright（E2E）/ zod（契約）。方針の正は [`design/13`](../../design/13_testing_strategy.md)。
+- Vitest（単体・結合）/ Hono の `app.request()`（API）/ Testcontainers（Postgres）/ Playwright（E2E）/ zod（契約）。方針の正は各層の設計書のテスト節（[`04_database`](../../design/04_database.md) / [`05_api`](../../design/05_api.md) / [`07_frontend`](../../design/07_frontend.md)）。
 - テストファイルも ESLint で守る: `*.test.ts`/`*.spec.ts` は `eslint-plugin-vitest`、`e2e/**` は `eslint-plugin-playwright`（`no-focused-tests` / `missing-playwright-await` 等の取りこぼし防止）。
 - 純ロジック（正規化・F2 判定式・レート・スニペット）は単体で分岐網羅。**非決定出力（LLM・embedding 数値）は値を assert しない**。構造・順序・分岐を見る。
 - 1 本の test は 1 つの振る舞いを見る。assert は「ステータス → 形 → 値」の順。
 - 外部依存はモック/フィクスチャで決定的に。実通信はスモーク 1 本まで。
-- RLS 越境・F2 検知回帰は CI 必須通過（[`design/13`](../../design/13_testing_strategy.md) の越境マトリクス・golden データセット）。
+- **認可マトリクス**（member が admin 専用 API を叩いたら 403）は CI 必須通過（[`design/06_auth.md`](../../design/06_auth.md) Step 4）。
 
 ## 禁止 / アンチパターン
 
@@ -198,7 +199,7 @@ async function take(buckets: Map<string, Bucket>, host: string, rpm: number): Pr
 - [ ] コメントが WHY を説明している（WHAT の言い換えになっていない）
 - [ ] 握ったエラーに理由があり、期待される失敗は型で表現されている（例外でない）
 - [ ] await 漏れ（floating promise）が無い／並行度に上限がある
-- [ ] SQL パラメータ化・tenant id は JWT 由来・収集先 URL の SSRF 防御
+- [ ] SQL パラメータ化・「誰か」はセッション由来（リクエストボディを認可に使わない）
 - [ ] ログ・エラーに秘密が出ていない
 - [ ] 追加ロジックに単体テスト、API 追加に結合テスト（正常 + テナント越境）
-- [ ] `npm run lint && npm run typecheck && npm run format:check` が緑
+- [ ] `pnpm lint && pnpm typecheck && pnpm format:check` が緑

@@ -2,7 +2,9 @@
 
 対象: `apps/web`（React フロント）。**TypeScript 全般は [typescript.md](typescript.md) が前提**で、本書はその差分（コンポーネント・hooks・状態・JSX）だけを書く。共通原則は [README.md](README.md)。
 
-UI は作り込まない方針（[`design/13`](../../design/13_testing_strategy.md)）。トレンド可視化・ドリルダウン・収集ヘルス・用語辞書管理（[`design/02`](../../design/02_architecture.md)）を、壊れにくく素直に作ることを優先する。
+**UI は作り込まない方針**（[`design/07_frontend.md`](../../design/07_frontend.md)）。管理コンソールの定番（ログイン / ダッシュボードのシェル / 一覧・詳細・編集 / 設定）を、壊れにくく素直に作ることを優先する。デザインシステムやアニメーションは非ゴール（[`design/01_goals_and_scope.md`](../../design/01_goals_and_scope.md)）。
+
+> 画面は `screens/registry.ts` に 1 エントリ足すとナビ・ルート・`/catalog` に載る（[`design/07_frontend.md`](../../design/07_frontend.md) の画面レジストリ）。
 
 ## 前提
 
@@ -13,10 +15,10 @@ UI は作り込まない方針（[`design/13`](../../design/13_testing_strategy.
 
 ## ファイル / ディレクトリ
 
-- コンポーネントファイルは `PascalCase.tsx`（`TrendChart.tsx`）。hooks は `useXxx.ts`（`useWatchlist.ts`）。それ以外のユーティリティは `kebab-case.ts`。
+- コンポーネントファイルは `PascalCase.tsx`（`DashboardShell.tsx`）。hooks は `useXxx.ts`（`useUsers.ts`）。それ以外のユーティリティは `kebab-case.ts`。
 - 1 ファイル 1 公開コンポーネント（+ そのファイル専用の小さな子は同居可）。
-- 機能（feature）単位でまとめる: `features/trends/`, `features/watchlist/`, `features/collection-health/`。横断 UI は `components/`、API クライアントは `lib/api/`。
-- ページ/ルートは `routes/` or フレームワーク規約に従う。URL 形式は `/t/{slug}/...`（[`design/02`](../../design/02_architecture.md)）。
+- 機能（feature）単位でまとめる: `features/auth/`, `features/dashboard/`, `features/users/`。横断 UI は `components/`、API クライアントは `lib/api/`。
+- **画面は `screens/<Name>/`**、`screens/registry.ts` に 1 エントリ足すとナビ・ルート・`/catalog` に載る。ルータの組み立ては `app/router.tsx`（[`design/07_frontend.md`](../../design/07_frontend.md)）。
 
 ## コンポーネント設計
 
@@ -24,13 +26,13 @@ UI は作り込まない方針（[`design/13`](../../design/13_testing_strategy.
 - props は **`interface` で定義し、destructure で受ける**。`React.FC` は使わない（children を暗黙に持つため）。
 
   ```tsx
-  interface TrendChartProps {
-    termSlug: string;
-    locale: Locale;
-    onSelectDay?: (day: string) => void;
+  interface FieldProps {
+    label: string;
+    error?: string;
+    children: ReactNode;
   }
 
-  export function TrendChart({ termSlug, locale, onSelectDay }: TrendChartProps) {
+  export function Field({ label, error, children }: FieldProps) {
     // …
   }
   ```
@@ -48,9 +50,9 @@ UI は作り込まない方針（[`design/13`](../../design/13_testing_strategy.
 5. ファイル下部に、このファイル専用の小コンポーネント / 純ヘルパー
 
 ```tsx
-export function WatchlistPanel({ tenantSlug }: WatchlistPanelProps) {
-  const { data, status } = useWatchlist(tenantSlug); // hooks を先頭に集める
-  const sorted = useMemo(() => sortByAddedAt(data ?? []), [data]);
+export function UserTable({ query }: UserTableProps) {
+  const { data, status } = useUsers(query); // hooks を先頭に集める
+  const sorted = useMemo(() => sortByCreatedAt(data ?? []), [data]);
 
   if (status === "loading") return <Spinner />;
   if (status === "error") return <ErrorNote />;
@@ -84,7 +86,8 @@ function WatchRow({ item }: { item: WatchItem }) {
 
 - API クライアントは `lib/api/` に集約し、**レスポンスを zod で検証**してから UI に渡す（バックエンドと型が揃っていても、境界で確定させる）。
 - 取得は loading / error / empty / success の**4 状態を必ず扱う**。empty を success と混同しない。
-- 認証 JWT・テナント文脈はクライアント側に信頼境界を作らない。**認可の一次防御はサーバ 403**（[`design/13`](../../design/13_testing_strategy.md) E10）。UI の出し分けは副次。
+- 認証状態はクライアント側に信頼境界を作らない。**認可の一次防御はサーバ 403**（[`design/06_auth.md`](../../design/06_auth.md) Step 4）。UI の出し分け（`requiredRole` でナビを隠す等）は副次。
+- **サーバ状態は TanStack Query に置く**。`useEffect + fetch` でデータ取得しない。状態の置き場所の分類は [`design/07_frontend.md`](../../design/07_frontend.md) の表が正。
 
 ## コメント / スタイル
 
@@ -94,7 +97,8 @@ function WatchRow({ item }: { item: WatchItem }) {
 
 ## テスト
 
-- 主要フローは **Playwright E2E**（[`design/13`](../../design/13_testing_strategy.md) E1–E10）。ゴールデンパス E1→E2→E4 と E3/E5 は CI 必須通過。
+- 主要フローは **Playwright E2E**（[`design/07_frontend.md`](../../design/07_frontend.md) のテスト節）。最低ラインは「ログイン → ダッシュボード表示」の 1 本。
+- 単体は Vitest + Testing Library、ネットワークは **MSW** でモック（E2E は実 API に当てる）。
 - コンポーネント単体が要るときは Testing Library で**ユーザー視点**（role / text で取得）。実装詳細（state 名・クラス名）に依存しない。
 - ピクセル単位のビジュアル回帰は追わない（主要画面のスナップショットに留める）。
 - セレクタは `data-testid` でなくアクセシブルな role/label を優先（テストが a11y を兼ねる）。
@@ -120,4 +124,5 @@ function WatchRow({ item }: { item: WatchItem }) {
 - [ ] 認可をサーバ 403 に依存（UI 非表示だけに頼っていない）
 - [ ] 定義順（props 型 → 公開コンポーネント → 子/ヘルパー）が守られている
 - [ ] リスト key が安定、a11y の最低限（role / alt / フォーカス）を満たす
-- [ ] 主要フローに Playwright E2E（[`design/13`](../../design/13_testing_strategy.md)）
+- [ ] 主要フローに Playwright E2E（[`design/07_frontend.md`](../../design/07_frontend.md)）
+- [ ] サーバ状態を TanStack Query に置いている（`useEffect + fetch` を書いていない）
