@@ -113,5 +113,4 @@
 - 認証を Step 2〜4 へ（Cookie 属性の作り込み → JWT 比較 → 認可マトリクス拡張）。[06_auth.md](06_auth.md)
 - **E2E（Playwright）1 本**：「/login → admin ログイン → /dashboard にシェル」。器が固まった Sprint 2 の頭で。あわせて CI に `e2e` / `build-images` を追加。[08_infra_ops.md](08_infra_ops.md)
 - **CORS を実際に踏む回**：Vite proxy を外して api を直叩きし、プリフライト失敗 / `Allow-Credentials` 無しで Cookie が飛ばない / `Allow-Origin: *` と credentials の併用不可 を体験する。[05_api.md](05_api.md)
-- `docs/conventions/*.md` のリンク切れ・題材例を新プロジェクトに合わせて修正。[10_conventions_pointer.md](10_conventions_pointer.md)
 - `.agents/skills/{pair-start,sprint-plan}` の `design/sprint*/day*.md` 前提記述を現構成に合わせて微修正

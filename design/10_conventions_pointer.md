@@ -6,21 +6,31 @@
 |---|---|---|
 | `apps/api`（Hono / Node）、`packages/*` | [typescript.md](../docs/conventions/typescript.md) | ESLint(type-aware) + Prettier + tsc |
 | `apps/web`（React） | [react.md](../docs/conventions/react.md) | ESLint(react/hooks/jsx-a11y) + Prettier + tsc |
-| `packages/db` の migration / 生 SQL | [sql.md](../docs/conventions/sql.md) | （sqlfluff は一旦外す。Drizzle 生成物の lint は要検討） |
-| （当面なし）Python / ML | [python.md](../docs/conventions/python.md) | ruff + mypy + pytest |
+| `packages/db` の migration / 生 SQL | [sql.md](../docs/conventions/sql.md) | （sqlfluff は外した。生成 SQL は人が読む + Testcontainers テスト） |
+| （当面なし）Python | [python.md](../docs/conventions/python.md) | ruff + mypy + pytest（**休眠中**。足すときに pre-commit フックも戻す） |
 | 全ファイル | [README.md](../docs/conventions/README.md) の共通 8 原則 | pre-commit / EditorConfig |
 
-## 既存規約の TrendScope 依存について
+## 既存規約の TrendScope 依存について（解消済み）
 
-`docs/conventions/*.md` には旧 `design/01`〜`14` へのリンクや TrendScope 固有の例（`SpikeItem`、`DayStat`、トレンド可視化 等）が残っている。**内容の原則は有効**なので、リンク切れと題材例だけを追って直す（別 PR）。直すときの置き換え目安:
+`docs/conventions/*.md` には旧 `design/01`〜`14` へのリンクや TrendScope 固有の例が残っていたが、**リンク切れと題材例は解消済み**。原則は変えていない。適用した置き換え:
 
 | 旧参照 | 新参照 |
 |---|---|
-| `design/02_architecture.md` | `design/03_architecture.md` |
+| `design/02_architecture.md` | `design/03_architecture.md` / `design/02_tech_stack.md` |
+| `design/03_db_schema.md` | `design/04_database.md` |
 | `design/04_security_multitenant.md`（境界の定義） | `design/05_api.md` + `design/06_auth.md` |
-| `design/13_testing_strategy.md` | `design/08_infra_ops.md` の「テスト」+ 各層ドキュメントのテスト節 |
-| `design/sprint1/refs/aggregate.ref.ts` | （削除済み。参照実装は必要になったら新規に） |
-| 題材例（Spike/Trend/Detection） | 本プロジェクトの題材（User/Session/AuditLog 等） |
+| `design/13_testing_strategy.md` | 各層ドキュメントのテスト節 + `design/08_infra_ops.md` |
+| `design/sprint1/refs/aggregate.ref.ts` | （削除済み。参照を落とした） |
+| 題材例（Spike/Trend/Watchlist/Tenant） | 本プロジェクトの題材（User/Session/AuditLog/RequestLog） |
+| `infra/db/migrations/*.sql`（手書き） | `packages/db/drizzle/*.sql`（Drizzle 生成） |
+| `npm run *` / `make *.embedding` | `pnpm *` |
+
+**方針の変更を伴った箇所**（原則の置き換えなので、リンク直し以上のことをした）:
+
+- **sql.md**: 「手書き migration」前提 → **「schema(TS) が単一の正、SQL は生成物。読んで判断する」**前提へ。RLS 節は「このプロジェクトではやらない」に圧縮し、その役割（越境の恒久ガード）は **API 層の認可マトリクステスト**が引き継ぐと明記
+- **python.md**: 冒頭に**休眠中**であることを明記。Embedding 固有節は「重いリソースを持つサービスの一般則」に一般化して保存
+- **react.md**: 題材を管理コンソール（`Field` / `UserTable` / `DashboardShell`）に。画面レジストリと「サーバ状態は TanStack Query」を追記
+- **TOOLING.md**: `apps/web` を `references` に入れない理由と `pnpm build` が要る理由（内部パッケージの解決）を追記
 
 ## コミット / ブランチ / PR
 

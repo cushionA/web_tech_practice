@@ -1,13 +1,17 @@
 # Python 規約
 
-対象: `services/embedding`（FastAPI 推論サービス）と ML 推論コード — スタック内で**唯一の非 TypeScript**（[`design/02`](../../design/02_architecture.md)）。共通原則は [README.md](README.md)。
+> **現在このプロジェクトに Python コードは無い。** 本書は休眠中の規約で、将来 Python（バッチ / ML / スクリプト）を足すときの出発点として保存してある。
+> 唯一の現役 Python は `.claude/scripts/pr-validate.py`（プロンプトインジェクション検査）で、これは開発ツールなので本規約の対象外。
 
-> AI 向けの in-tree 作業ルールは [`embedding/CLAUDE.md`](../../embedding/CLAUDE.md) が持つ。本書はそれと**同じ方針を人間のレビュー基準として**まとめ直したもの。両者が食い違ったらまず CLAUDE.md と本書を一致させる（重複定義を放置しない）。
+対象（将来）: FastAPI などの Python サービスと、`scripts/` に置く運用スクリプト。共通原則は [README.md](README.md)。
+
+> 元は TrendScope の `embedding`（multilingual-e5 推論サービス）向けに書かれたもの。サービスは撤去したが、**規約としての原則（型・エラー・テスト・禁止事項）はそのまま有効**なので残している。
 
 ## 前提
 
-- **Python 3.11 固定**（`.python-version`）。3.10 へのフォールバック構文を書かない。
-- 整形・lint は **ruff**（`ruff format` + `ruff check`）、型は **mypy --strict**。設定は [`embedding/pyproject.toml`](../../embedding/pyproject.toml) が正。**整形はレビューで指摘しない**（`make format.embedding` が直す）。
+- **バージョンは足すときに固定する**（`.python-version` を置く）。古い版へのフォールバック構文を書かない。
+- 整形・lint は **ruff**（`ruff format` + `ruff check`）、型は **mypy --strict**。設定は各サービスの `pyproject.toml` が正。**整形はレビューで指摘しない**（`ruff format` が直す）。
+- ruff / sqlfluff の pre-commit フックは TrendScope 撤去時に外した。Python を足すときに戻す（[TOOLING.md](TOOLING.md)）。
 - ruff ルールセット: `E,W,F,I,B,UP,S,SIM,RUF,TID,PT`（bugbear・pyupgrade・bandit(S)・simplify を含む）。`ruff format` はダブルクォート・スペースインデント。
 
 ## ファイル / モジュール
@@ -48,11 +52,14 @@
 - エラーは `HTTPException(status_code=4xx, detail=...)`。`return {"error": ...}` を 200 で返さない。
 - 重い初期化（モデルロード）は**遅延**。`import app.main` がモデルをダウンロードしてはいけない。
 
-## Embedding サービス固有
+## 重いリソースを持つサービスの扱い（一般則）
 
-- `Embedder` は遅延ロード。`FAKE_EMBEDDER=1` で**決定的なダミー単位ベクトル**を返し、CI・単体はこれを使う（実モデルを単体テストでロードしない）。
-- ベクトルは常に L2 正規化（`normalize_embeddings=True`）。cosine = 内積に落ちて pgvector と整合。
-- **e5 プレフィクス規約**: query には `query:`、文書には `passage:`。`/embed` の `mode` で切替。誤用は recall を静かに劣化させる（[CLAUDE.md](../../embedding/CLAUDE.md) / 横断ルール）。
+元は Embedding サービス向けに書いた節。**モデル・DB 接続・巨大な辞書など「起動が重いもの」を持つサービス全般**に効く。
+
+- 重いリソースは**遅延ロード**。import 時にロードしない（テストの import が遅くなる / CI が落ちる）。
+- **環境変数でフェイク実装に差し替えられるようにする**（例: `FAKE_EMBEDDER=1` で決定的なダミーを返す）。CI・単体はフェイクを使い、実物は `integration` マーカーに隔離。
+- **出力の正規化ルールを 1 箇所に閉じ込める**（例: ベクトルの L2 正規化）。呼び出し側で毎回やらない。
+- **入力の前処理規約は型か enum で強制する**（例: query と文書でプレフィクスが違うなら `mode` パラメータで切り替え、呼び出し側の記憶に頼らない）。誤用が**静かに品質を下げる**類のものは、機械的に間違えられなくする。
 
 ## エラーハンドリング
 
@@ -80,7 +87,7 @@
 - assert は**ステータス → JSON の形 → 値**の順。
 - 非決定（ベクトルの絶対値）は assert しない。次元・正規化・分岐・スキーマ妥当性を見る。
 - `pytest --strict-markers --strict-config`。`slow`/`integration` マーカーで実モデル・ネットワークを分離。
-- TS 側からは**契約テスト（zod）+ スモーク 1 本**で境界を守る（[`design/13`](../../design/13_testing_strategy.md)）。
+- TS 側から呼ぶなら**契約テスト（zod）+ スモーク 1 本**で境界を守る（[typescript.md](typescript.md) の「境界」）。
 
 ## 禁止 / アンチパターン
 
@@ -100,4 +107,4 @@
 - [ ] e5 の `query:`/`passage:` プレフィクスが正しい、ベクトル L2 正規化
 - [ ] モデルは遅延ロード、テストは `FAKE_EMBEDDER=1`
 - [ ] 秘密は環境変数、入力長上限、CORS 既定で閉、`httpx` 使用
-- [ ] `make lint.embedding`（ruff + mypy）と `make test.embedding` が緑
+- [ ] `ruff check` + `ruff format --check` + `mypy --strict` + `pytest` が緑
