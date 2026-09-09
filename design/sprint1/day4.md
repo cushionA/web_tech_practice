@@ -67,11 +67,11 @@ SQL を `db/` に閉じ込め、ルータからは「関数」を呼ぶ（[03_ar
 データアクセス層の切り方は設計。`findUserByEmail` が何の SQL になるか（生成 SQL を読む）を理解する。
 
 **前提確認**
-- [ ] `@app/db` の barrel から `client` と `schema` が使える
+- [ ] `@app/db` の barrel から `db`（Drizzle）と `schema` が使える
 - [ ] [design/04_database.md](../04_database.md) の `users` / `sessions` スキーマ
 
 **手順**
-1. `apps/api/src/db/index.ts`：`drizzle` インスタンスを作る（`@app/db` の `client` を渡す）か、`@app/db` 側で drizzle を公開しているならそれを re-export。
+1. `apps/api/src/db/index.ts`：**api 側で drizzle を作り直さない**。`@app/db` が公開している `db` をそのまま import して使う（Day2-3 で `sql` / `db` に分けた）。
 2. `apps/api/src/db/users.ts`。**ヒント**（返り値型は明示）:
    - `findUserByEmail(email: string): Promise<UserRow | undefined>` → `db.select().from(users).where(eq(users.email, email)).limit(1)` の `[0]`
    - `findUserById(id: string): Promise<UserRow | undefined>`
@@ -159,10 +159,13 @@ SQL を `db/` に閉じ込め、ルータからは「関数」を呼ぶ（[03_ar
 **前提確認**
 - [ ] [design/06_auth.md](../06_auth.md) の Step 4（認可）
 - [ ] [design/05_api.md](../05_api.md) の「ミドルウェア」表（`auth` / `requireRole`）
+- [ ] Day4-4 で `setSignedCookie` / `getSignedCookie` を使ったことを確認した（**ここでも同じ読み方に揃える**）
 
 **手順**
 1. `apps/api/src/middleware/auth.ts`。**ヒント**:
-   - `createMiddleware(async (c, next) => { const sid = getCookie(c, "sid"); if (sid) { const found = await findValidSession(sid); if (found) c.set("user", found.user) } await next() })`
+   - `createMiddleware(async (c, next) => { const sid = await getSignedCookie(c, config.SESSION_SECRET, "sid"); if (sid) { const found = await findValidSession(sid); if (found) c.set("user", found.user) } await next() })`
+   - **`getCookie` ではなく `getSignedCookie`**。Day4-4 の `setSignedCookie` と対にする。素の `getCookie` で読むと署名付きの文字列をそのまま session UUID として DB 検索することになり、`/me` が通らない
+   - `getSignedCookie` は**検証失敗時に例外ではなく偽値**を返す。`if (sid)` で弾けば「改ざん Cookie は DB を引く前に落ちる」（Day4-4 の完了確認）が成立する
    - **ここでは 401 を投げない**（`/me` のような「未認証も正常系」があるため）。認証必須のルートは下の `requireAuth` で
    - `export const requireAuth = createMiddleware(async (c, next) => { if (!c.get("user")) throw unauthorized(); await next() })`
    - `export const requireRole = (role: "admin") => createMiddleware(async (c, next) => { const u = c.get("user"); if (!u) throw unauthorized(); if (u.role !== role) throw forbidden(); await next() })`

@@ -39,17 +39,19 @@ export interface ScreenMeta {
   icon?: ComponentType;        // 任意
   requiredRole?: "admin";      // 認可
   patternTags: string[];       // ["CRUD", "pagination"] — 学習パターンの索引
-  element: () => Promise<{ default: ComponentType }>;  // 遅延 import
+  loadComponent: () => Promise<{ default: ComponentType }>;  // 遅延 import
 }
 
 export const screens: ScreenMeta[] = [
   { id: "dashboard", title: "ダッシュボード", path: "/dashboard",
-    patternTags: ["shell"], element: () => import("./Dashboard") },
+    patternTags: ["shell"], loadComponent: () => import("./Dashboard") },
   // ここに 1 行足すと、ナビ・ルート・カタログページに自動で載る
 ];
 ```
 
-- `router.tsx` は `screens` を map して `<Route>` を生成。
+- `router.tsx` は `screens` を map して `<Route>` を生成。**data router の `route.lazy` は `{ Component, loader, ... }` という route object の一部を返す契約**なので、`{ default: ... }` をそのまま渡さず変換する:
+  `lazy: async () => ({ Component: (await s.loadComponent()).default })`
+  （フィールド名を `element` にしないのは、React Router の `element`（= ReactNode）と紛らわしいため）
 - `DashboardShell` のサイドバーは `screens` を map してリンク生成（`requiredRole` でフィルタ）。
 - `/catalog` 画面：`screens` を一覧表示し、`patternTags` で「どの画面でどのパターンを練習したか」を俯瞰できる。
 

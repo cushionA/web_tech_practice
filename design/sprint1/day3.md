@@ -14,11 +14,11 @@
 **前提確認**
 - [ ] `docker compose -f infra/compose.yaml up -d` で postgres が healthy
 - [ ] `pnpm --filter @app/db migrate` 適用済み、seed 済み
-- [ ] `packages/db` の barrel から `client` / `schema` が import できる
+- [ ] `packages/db` の barrel から **`pgClient`（postgres.js）/ `db`（Drizzle）/ `schema`** が import できる（Day2-3 で名前を分けた）
 - [ ] `.env` に `DATABASE_URL` がある
 
 **完了確認**
-- [ ] `node --env-file=.env -e "import('@app/db').then(m=>m.client\`select 1\`).then(r=>console.log(r))"` 相当で疎通する（ワンライナーが難しければ Day3-4 で確認でよい）
+- [ ] `node --env-file=.env -e "import('@app/db').then(m=>m.pgClient\`select 1\`).then(r=>console.log(r))"` 相当で疎通する（ワンライナーが難しければ Day3-4 で確認でよい）
 
 ---
 
@@ -123,13 +123,14 @@ API のエントリ構造は自分で説明できる必要がある。`config` �
 「生きているか」だけでなく「DB に届くか」を返すヘルスチェック。compose の `depends_on` や Day 8 の監視で使う。
 
 **前提確認**
-- [ ] `@app/db` の `client` が import できる
+- [ ] `@app/db` の `pgClient` が import できる
 - [ ] [design/08_infra_ops.md](../08_infra_ops.md) の「ヘルスチェック」への言及を読んだ
 
 **手順**
 1. `apps/api/src/routes/health.ts`。**ヒント**:
    - `const health = new Hono()`
-   - `health.get("/", async (c) => { try { await client\`select 1\`; return c.json({ status: "ok", db: "ok" }) } catch { return c.json({ status: "ok", db: "down" }, 503) } })`
+   - `health.get("/", async (c) => { try { await pgClient\`select 1\`; return c.json({ status: "ok", db: "ok" }) } catch { return c.json({ status: "ok", db: "down" }, 503) } })`
+   - ここは**あえて Drizzle を通さず生 SQL**（疎通確認に ORM は要らない）。`pgClient` と `db` を使い分ける最初の例
    - DB が落ちていたら `503`（readiness の考え方）
 2. `app.ts` で `app.route("/health", health)`。
 3. `docker compose ... stop postgres` して `GET /health` が `503 { db: "down" }` になることを確認 → `start postgres` で戻る。
@@ -140,7 +141,7 @@ API のエントリ構造は自分で説明できる必要がある。`config` �
 - [ ] `/health` のログ 1 行が出る
 
 **詰まったら**
-- `client\`select 1\`` の書き方 → `postgres` ライブラリのタグ付きテンプレート。`await client\`select 1 as x\`` は配列を返す
+- `pgClient\`select 1\`` の書き方 → `postgres` ライブラリのタグ付きテンプレート。`await pgClient\`select 1 as x\`` は配列を返す
 - 常に `db: down` → `DATABASE_URL` が api プロセスに渡っているか（`--env-file`）
 
 ---

@@ -122,10 +122,15 @@
 
 **手順**
 1. `apps/web/src/screens/registry.ts`。**ヒント**（型は [07_frontend.md](../07_frontend.md) のサンプル）:
-   - `interface ScreenMeta { id; title; path; requiredRole?: "admin"; patternTags: string[]; element: () => Promise<{ default: ComponentType }> }`
-   - `export const screens: ScreenMeta[] = [ { id: "dashboard", title: "ダッシュボード", path: "/dashboard", patternTags: ["shell"], element: () => import("./Dashboard") } ]`
+   - `interface ScreenMeta { id; title; path; requiredRole?: "admin"; patternTags: string[]; loadComponent: () => Promise<{ default: ComponentType }> }`
+   - **`element` という名前にしない**。React Router の `element` は ReactNode を指すので紛らわしい
+   - `export const screens: ScreenMeta[] = [ { id: "dashboard", title: "ダッシュボード", path: "/dashboard", patternTags: ["shell"], loadComponent: () => import("./Dashboard") } ]`
    - `patternTags` は「どの画面でどのパターンを練習したか」の索引。**あとで自分が見返すためのもの**
-2. `router.tsx` を更新：`screens` を map してレイアウト配下に `<Route>` を生成（`lazy` で `element` を遅延ロード）。
+2. `router.tsx` を更新：`screens` を map してレイアウト配下にルートを生成する。**ここが噛み合わないポイント**:
+   - `loadComponent()` が返すのは `{ default: Component }`（ES module の形）
+   - data router の **`route.lazy` が期待するのは `{ Component, loader, action, ... }` という route object の一部**
+   - そのまま渡すと動かないので**変換する**:
+     `{ path: s.path, lazy: async () => ({ Component: (await s.loadComponent()).default }) }`
 3. `DashboardShell` のサイドバーを `screens` から生成：
    - `.filter(s => !s.requiredRole || s.requiredRole === user?.role)` して `<NavLink to={s.path}>{s.title}</NavLink>`
    - **フロントの出し分けはセキュリティではない**（[06_auth.md](../06_auth.md) Step 4）。API 側が本丸であることをコメントに残す
@@ -141,7 +146,9 @@
 - [ ] `pnpm --filter @app/web typecheck` 緑
 
 **詰まったら**
-- `lazy` import が型エラー → `element: () => import("./X")` の `X.tsx` が `default export` を持つか。React Router のバージョンによって `lazy` が `{ Component }` を返す形式もあるので、使っているバージョンのドキュメントに合わせる
+- **画面が真っ白 / `lazy` が型エラー** → `loadComponent()` の `{ default: C }` を `{ Component: C }` に**変換し忘れている**（手順 2）。`lazy` は ES module ではなく route object の一部を期待する
+- `default export` が無い → `screens/<Name>.tsx` は `export default` にする
+- React Router のバージョンによって `lazy` の契約が変わることがあるので、使っているバージョンのドキュメントで `route.lazy` の戻り値を確認する
 - サイドバーの active スタイル → `NavLink` の `className={({isActive}) => ...}`
 - registry に足したのにルートが増えない → `router.tsx` の map が layout ルートの `children` に入っているか
 

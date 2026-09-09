@@ -10,6 +10,7 @@
 - **時刻**: `timestamptz`。`created_at` / `updated_at` を基本で持つ（`updated_at` はアプリ側 or トリガーで更新）。
 - **論理削除はしない**（学習を複雑にする）。必要になった画面だけ `deleted_at` を検討。
 - **enum はアプリ層の union + `text` + `CHECK`**（Postgres enum は migration が面倒）。例: `role text not null check (role in ('admin','member'))`。
+  - **CHECK は Drizzle schema に `check()` で書く**（migration SQL を手編集しない）。`text("role", { enum: [...] })` は **TS の型補助にすぎず DB 制約にならない**ので、両方書いて初めて「アプリ層の union + DB の CHECK」が揃う。`packages/db/src/schema/*.ts` を単一の正にする方針（[03_architecture.md](03_architecture.md)）との一貫性でもある。
 - **NOT NULL をデフォルトに**。null を許すのは「未入力が意味を持つ」列だけ。
 - **インデックス**: 外部キー・検索条件・ユニーク制約に明示的に張る。「なぜこの index か」を migration のコメントに書く。
 

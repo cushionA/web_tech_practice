@@ -128,16 +128,26 @@
    - `email: text("email").notNull().unique()`
    - `passwordHash: text("password_hash").notNull()`
    - `role: text("role", { enum: ["admin", "member"] }).notNull().default("member")`
-     — Postgres enum ではなく `text` + アプリ側 union（[04_database.md](../04_database.md)）。`CHECK` を足すなら migration を手で調整
+     — Postgres enum ではなく `text` + アプリ側 union（[04_database.md](../04_database.md)）
+     — **`{ enum: [...] }` は TS の型補助だけで、DB の CHECK 制約にはならない。** DB 側も縛るために `pgTable` の第 3 引数で `check()` を足す:
+       ```ts
+       import { check } from "drizzle-orm/pg-core";
+       import { sql } from "drizzle-orm";
+       // pgTable("users", {...}, (t) => [ check("users_role_check", sql`${t.role} in ('admin','member')`) ])
+       ```
+     — **migration SQL を手編集しない**（`packages/db/src/schema/*.ts` が単一の正。[04_database.md](../04_database.md)）
    - `createdAt` / `updatedAt`: `timestamp("created_at", { withTimezone: true }).notNull().defaultNow()`
 4. `packages/db/src/schema/sessions.ts`:
    - `userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" })`
    - `expiresAt: timestamp("expires_at", { withTimezone: true }).notNull()`
    - index: `index("sessions_user_id_idx").on(t.userId)` など（Drizzle の `index()` ヘルパ）
 5. `packages/db/src/schema/index.ts` で両方 re-export。
-6. `packages/db/src/client.ts`：
-   - `postgres(process.env.DATABASE_URL!)` で接続 → `drizzle(sql, { schema })` をエクスポート
-7. `packages/db/src/index.ts`（barrel）で `client` と `schema` を公開。
+6. `packages/db/src/client.ts`：**2 つを別の名前で公開する**（責務が違うため。ここが曖昧だと Day3/Day4 で迷う）
+   - `export const pgClient = postgres(process.env.DATABASE_URL!)` — postgres.js の**低レベルクライアント**。タグ付きテンプレートで生 SQL を書く用（`/health` の `select 1` など）
+   - `export const db = drizzle(pgClient, { schema })` — **Drizzle インスタンス**。型付きクエリはすべてこちら
+   - `pgClient` を直接使うのは「Drizzle で書けない / 書く意味がない」場面だけ、と決めておく
+   - **`sql` という名前にしない**：`drizzle-orm` の `sql` テンプレートヘルパ（`check()` で使う）と衝突する
+7. `packages/db/src/index.ts`（barrel）で `pgClient` / `db` / `schema` / `hashPassword` / `verifyPassword` を公開。
 
 **完了確認**
 - [ ] `pnpm --filter @app/db typecheck` が緑
@@ -175,7 +185,7 @@ migration 運用は実務の心臓。生成物を鵜呑みにせず読む習慣�
    （env の渡し方は Day2-3「詰まったら」に従う）
 2. `pnpm --filter @app/db generate` → `packages/db/drizzle/0000_*.sql` が生成される。
 3. **生成 SQL を開いて全部読む**。`create table users (...)`、`create unique index`、FK 制約、`create table sessions (...)`。想定と合っているか（型・NOT NULL・default・onDelete）。
-4. `CHECK (role in ('admin','member'))` を入れたい場合はこの SQL に手で追記し、Drizzle 側にもコメントを残す（生成と手書きのズレを認識する）。
+4. 生成 SQL に **`CHECK (role in ('admin','member'))` が含まれているか確認する**。無ければ Day2-3 の `check()` が抜けている → **SQL を手で足すのではなく schema を直して `generate` し直す**（schema が単一の正）。
 5. `pnpm --filter @app/db migrate` で適用。
 6. adminer で `users` `sessions` テーブルと `__drizzle_migrations`（適用履歴）を確認。
 
@@ -208,7 +218,7 @@ migration 運用は実務の心臓。生成物を鵜呑みにせず読む習慣�
    - パラメータの意味のコメントは Day4-2 で深掘りするので、今は既定値 + TODO で可
    - barrel（`src/index.ts`）から export する
 3. `packages/db/src/seed.ts`。**ヒント**:
-   - `client` と `schema`、`hashPassword` を import
+   - `db` と `schema`、`hashPassword` を import
    - `hashPassword("password")` で admin/member のパスワードハッシュを作る
    - `db.insert(schema.users).values([...]).onConflictDoNothing({ target: schema.users.email })`
    - admin: `admin@example.com` / member: `member@example.com`（パスワードはどちらも `password` でよい。**学習用ローカル限定**）
@@ -248,7 +258,7 @@ migration 運用は実務の心臓。生成物を鵜呑みにせず読む習慣�
    - test 1: `users` に insert できる
    - test 2: 同じ email で 2 回 insert すると UNIQUE 違反で throw する
    - test 3: 存在しない `user_id` で `sessions` に insert すると FK 違反で throw する
-   - test 4: `role` に `'superadmin'` を入れると CHECK 違反で throw する（CHECK を入れた場合）
+   - test 4: `role` に `'superadmin'` を入れると CHECK 違反で throw する（**`check()` が DB まで効いていることの確認**。TS の `{ enum: [...] }` だけでは通ってしまう）
    - `afterAll`: `container.stop()`
 4. `packages/db/package.json` に `"test": "vitest run"`。
 5. `pnpm --filter @app/db test` が緑。
@@ -283,5 +293,5 @@ packages/db/test/schema.test.ts と同じ Testcontainers セットアップで�
 ## Day 3 への引き継ぎメモ
 
 - Day 3 は `apps/api` に Hono を入れて `GET /health`（DB 疎通込み）+ ミドルウェア（logger/error/cors）+ `packages/shared` に DTO。
-- api は `@app/db` の `client` を import して `select 1` する。
+- api は `@app/db` の **`pgClient`**（postgres.js クライアント）を import して `select 1` する。型付きクエリは `db`（Drizzle）を使う。**2 つの違いを意識する**。
 - `lib/config.ts` で `.env` を zod 検証。`SESSION_SECRET` はここで必須にする（Day 4 で使う）。
