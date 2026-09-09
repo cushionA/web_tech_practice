@@ -211,21 +211,22 @@ workspace の切り方（どこを 1 パッケージにするか、内部参照�
 ## Day1-5. CI を新構成に改修 [自分] [INFRA]（雛形は [AI] 可）
 
 **目的**
-`.github/workflows/ci.yml` は embedding（Python）/ sqlfluff / docker-build(embedding) 前提。これを pnpm + 新パッケージ向けに直す。Sprint 1 の範囲では `lint` / `typecheck` が緑になれば十分（`test-*` は Day 3〜5 で中身ができてから有効化）。
+`ci.yml` を **pnpm + 新パッケージ向けに組み直す**。Sprint 1 の範囲では `lint` / `typecheck` が緑になれば十分（`test-api` は Day 3〜4、`test-web` は Day 6 で中身ができてから足す）。
+
+> **削除済みディレクトリを参照していたジョブ（`embedding` / `sql`(sqlfluff) / `docker-build`）は、TrendScope 撤去 PR で既に除去済み。** 消したものの後始末は削除側の責任なので、ここには含まれない。**このタスクは「足す側」だけ**。
 
 **自分で書く理由**
 CI は「何を品質ゲートにするか」の宣言。自分で読める YAML にしておくと、後でジョブを足すのが怖くなくなる。
 
 **前提確認**
 - [ ] 現 `ci.yml` / `codeql.yml` を読んだ（[TOOLING.md](../../docs/conventions/TOOLING.md) の CI 節も）
+- [ ] `ci.yml` に残っているのが `node` と `pr-security` の 2 ジョブだけであることを確認した
 - [ ] Day1-2〜1-4 が終わっていて、ローカルで `pnpm lint && pnpm typecheck` が緑
 
 **手順**
-1. `ci.yml` を編集:
-   - `embedding` job を削除
-   - `sql` job（sqlfluff）を削除
-   - `docker-build` job を削除（Sprint で `apps/api`・`apps/web` のビルドとして復活させる。今は消してよい）
-   - `node` job を pnpm 化:
+1. `ci.yml` の `node` job を編集:
+   - **`npm ci` のままだと Day1-2 で lockfile を pnpm に切り替えた時点で壊れる。** ここが本題
+   - pnpm 化:
      ```yaml
      - uses: pnpm/action-setup@v4
        with: { version: <pnpm バージョン> }
@@ -238,17 +239,18 @@ CI は「何を品質ゲートにするか」の宣言。自分で読める YAML
      ```
    - `pr-security` job（`.claude/scripts/pr-validate.py`）は**そのまま維持**
 2. `codeql.yml`：matrix の `language: [python]` を `language: [javascript-typescript]` に変更。
+   - 今は Python が無いので「解析対象ゼロで pass」しているだけの状態。TS を解析するように切り替える
 3. コミットして PR。CI が緑になることを確認。
 
 **完了確認**
 - [ ] PR の CI で `node`（lint + typecheck）と `pr-security` が緑
-- [ ] 削除したジョブが Actions のログに出ない
+- [ ] `node` ジョブのログが `pnpm install --frozen-lockfile` を実行している（`npm ci` ではない）
 - [ ] `codeql` が js-ts で走る（初回は時間がかかる。緑を確認）
 
 **AI 依頼テンプレ**（雛形が欲しい場合）
 ```
 .github/workflows/ci.yml を pnpm + monorepo 向けに書き換えたい。
-- 削除: embedding(Python), sql(sqlfluff), docker-build
+- 現状: node と pr-security の 2 ジョブのみ（旧 Python/sqlfluff ジョブは撤去済み）
 - node ジョブ: pnpm/action-setup@v4 → setup-node@v6(node は Active LTS, cache pnpm)
   → pnpm install --frozen-lockfile → pnpm format:check → pnpm lint → pnpm typecheck
 - pr-security ジョブ(.claude/scripts/pr-validate.py)はそのまま残す
@@ -260,28 +262,28 @@ CI は「何を品質ゲートにするか」の宣言。自分で読める YAML
 ## Day1-6. Makefile と pre-commit の棚卸し [自分] [INFRA]
 
 **目的**
-`Makefile` と `.pre-commit-config.yaml` も TrendScope 前提のまま残っている。**特に `Makefile` は既に壊れている**（`lint: lint.embedding lint.ts` だが `embedding/` は削除済み）。ここを直さないと Day1-2 以降の最初のコミットで足を取られる。
+`Makefile` と `.pre-commit-config.yaml` を新構成（pnpm / `apps` / `packages`）に合わせる。
+
+> **削除済みディレクトリを参照していた設定（`embedding` 系ターゲット、`lint.sql`、ruff / sqlfluff フック、`workers` を含む glob）は、TrendScope 撤去 PR で既に除去済み。** **このタスクは「新構成に合わせる側」だけ**。
 
 **自分で書く理由**
 「どのコマンドが自分のプロジェクトの入口か」を決める作業。壊れた入口を放置すると、後で他人（と未来の自分）が最初に踏む。
 
 **前提確認**
-- [ ] `make lint` を実行して**失敗する**ことを確認した（`embedding/` が無い）
+- [ ] `Makefile` を読んだ（残っているのは repo-wide / typescript / compose / security の 4 セクション）
 - [ ] `.pre-commit-config.yaml` を読んだ（[08_infra_ops.md](../08_infra_ops.md) の pre-commit 節）
 - [ ] `pre-commit install -t pre-commit -t commit-msg` 済み
 
 **手順**
 1. `Makefile`:
-   - `lint.embedding` / `test.embedding` / `format.embedding` / `install.embedding` など **embedding 系ターゲットを全削除**
-   - `lint` / `test` / `format` を pnpm ベースに（`pnpm lint` / `pnpm typecheck` / `pnpm -r test`）
-   - `install-tooling` の `npm install` を `pnpm install` に
-   - `up` / `logs` を `docker compose -f infra/compose.yaml` に（Day 2 で compose を作るので、先にターゲットだけ用意しても、Day 2 に回してもよい）
-   - **判断**: `Makefile` を残すか捨てるか。pnpm scripts で足りるなら捨ててよい。**残すなら `CLAUDE.md` の主要コマンドと一致させる**（Day1-4）
+   - **まず判断: 残すか捨てるか。** pnpm scripts で足りるなら捨ててよい。**残すなら `CLAUDE.md` の主要コマンドと一致させる**（Day1-4）
+   - 残す場合: `install.ts` / `lint.ts` / `format.ts` / `typecheck.ts` と `install-tooling` の `npm` を **`pnpm` に**
+   - `test` ターゲットを**足し直す**（`pnpm -r test`）。TrendScope 撤去時に中身が無くなって消えている
+   - `up` / `down` / `logs` / `ps` に **`-f infra/compose.yaml` を付ける**（現状は素の `docker compose` で、compose ファイルの場所を見ていない）。**Day2-2 で compose を作ってから**でよい
 2. `.pre-commit-config.yaml`:
-   - 削除: `ruff` / `ruff-format`（`files: ^embedding/` なので発火しないが、死んだ設定を残さない）、`sqlfluff`（`files: ^infra/db/` — migration は `packages/db/drizzle/` に出るので当たらない）
-   - 維持: whitespace / end-of-file / check-yaml/json / merge-conflict / 大ファイル / detect-private-key / gitleaks / prettier / eslint / commitlint / prompt-injection-scan
-   - **`prettier` / `eslint` フックの `files:` が `^(apps|workers|packages)/`** になっている。`workers` は無くなったので `^(apps|packages)/` に直す
    - `npx --no-install` のままでよいか確認（pnpm でもルート `node_modules/.bin` は作られるので通るはず。通らなければ `pnpm exec` に）
+   - `files:` が `^(apps|packages)/` になっているので、Day1-3 で作ったパッケージから発火するはず。**実際に発火するか確かめる**（下の完了確認）
+   - 維持されているもの: whitespace / end-of-file / check-yaml/json / merge-conflict / 大ファイル / detect-private-key / gitleaks / prettier / eslint / commitlint / prompt-injection-scan
 
 **完了確認**
 - [ ] `make lint`（残す場合）または `pnpm lint` が緑
@@ -303,7 +305,7 @@ CI は「何を品質ゲートにするか」の宣言。自分で読める YAML
 - [ ] `pnpm typecheck` が緑（`tsc -b` 3 パッケージ + web は `tsc --noEmit`。**web はルート `references` に入れない**）
 - [ ] `pnpm lint` `pnpm format:check` が緑
 - [ ] `CLAUDE.md` / `README.md` が本ピボットを反映
-- [ ] `Makefile` / `.pre-commit-config.yaml` が新構成で動く（`pre-commit run --all-files` が緑）
+- [ ] `Makefile`（残す場合）が pnpm ベース / `.pre-commit-config.yaml` が新構成で動く（`pre-commit run --all-files` が緑）
 - [ ] CI（`ci.yml` の node ジョブ + `pr-security` + `codeql`）が緑
 - [ ] 各タスクを 1 PR ずつ、Conventional Commits でマージ（**`DayX-1` 前提確認と Day1-1 のバージョン確定は成果物が無いので PR 対象外**）
 

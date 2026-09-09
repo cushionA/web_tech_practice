@@ -30,7 +30,8 @@
 - D1-2 pnpm workspace 化：`pnpm-workspace.yaml`、ルート `package.json` を pnpm 前提に、`.npmrc` **[自分]**
 - D1-3 空パッケージ 4 つ：`apps/api` `apps/web` `packages/db` `packages/shared` に `package.json` + `tsconfig.json`（base 継承）、ルート `tsconfig.json` の `references` に登録 **[自分]**
 - D1-4 `CLAUDE.md` / ルート `README.md` を本ピボットに刷新（TrendScope 記述の除去） **[自分]**
-- D1-5 CI 改修：`ci.yml` の embedding/sqlfluff ジョブを削除、`lint`/`typecheck` を pnpm 化、`codeql.yml` を js-ts に **[自分]**（雛形は [AI] 可）
+- D1-5 CI 改修：`node` ジョブを pnpm 化（`npm ci` のままだと D1-2 で壊れる）、`codeql.yml` を js-ts に **[自分]**（雛形は [AI] 可）
+- D1-6 `Makefile` / `.pre-commit-config.yaml` を新構成（pnpm / `apps`・`packages`）に合わせる **[自分]**
 
 ### Day 2（[INFRA] [BE]）
 - D2-1 前提確認：Day 1 の 4 パッケージが `pnpm typecheck` を通る **[自分]**

@@ -17,35 +17,10 @@ install-tooling: ## Install pre-commit (+commit-msg) + npm deps
 	npm install
 
 .PHONY: lint
-lint: lint.embedding lint.ts ## Lint everything
-
-.PHONY: test
-test: test.embedding ## Test everything
+lint: lint.ts ## Lint everything
 
 .PHONY: format
-format: format.embedding format.ts ## Auto-format everything
-
-# ---- embedding --------------------------------------------------------------
-
-.PHONY: install.embedding
-install.embedding: ## pip install editable + dev deps
-	cd embedding && pip install -e ".[dev]"
-
-.PHONY: lint.embedding
-lint.embedding: ## ruff check + format check + mypy
-	cd embedding && ruff check app tests && ruff format --check app tests && mypy app
-
-.PHONY: format.embedding
-format.embedding: ## ruff format
-	cd embedding && ruff format app tests && ruff check --fix app tests
-
-.PHONY: test.embedding
-test.embedding: ## pytest (fake embedder)
-	cd embedding && FAKE_EMBEDDER=1 pytest
-
-.PHONY: run.embedding
-run.embedding: ## Run uvicorn with reload
-	cd embedding && FAKE_EMBEDDER=1 uvicorn app.main:app --reload --port 9000
+format: format.ts ## Auto-format everything
 
 # ---- typescript -------------------------------------------------------------
 
@@ -66,16 +41,6 @@ format.ts: ## prettier write + eslint --fix
 .PHONY: typecheck.ts
 typecheck.ts: ## tsc -b (no-op until apps registered in tsconfig references)
 	npm run typecheck
-
-# ---- sql --------------------------------------------------------------------
-
-.PHONY: lint.sql
-lint.sql: ## sqlfluff lint migrations (needs: pip install sqlfluff)
-	sqlfluff lint infra/db
-
-.PHONY: format.sql
-format.sql: ## sqlfluff fix migrations (review the diff; respects .sqlfluff)
-	sqlfluff fix infra/db
 
 # ---- compose ----------------------------------------------------------------
 

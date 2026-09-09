@@ -33,7 +33,7 @@
 
 ## CI（GitHub Actions） — 既存 `ci.yml` を改修
 
-旧 TrendScope 用のジョブ（embedding / sqlfluff / docker-build(embedding) / pr-security の一部）は削除・置換する。新しいジョブ:
+旧 TrendScope 用のジョブ（`embedding` / `sql`(sqlfluff) / `docker-build`(embedding)）は**削除済み**（消したディレクトリを参照していたため、TrendScope 撤去の一部として処理した）。現在は `node` と `pr-security` の 2 ジョブ。ここから組み直す:
 
 | job | 内容 |
 |---|---|
@@ -76,7 +76,8 @@
 ## pre-commit（既存 `.pre-commit-config.yaml` を調整）
 
 - 維持: whitespace / end-of-file / check-yaml/json / merge-conflict / 大ファイル / detect-private-key / gitleaks / prettier / eslint / commitlint / prompt-injection-scan。
-- 削除: ruff（embedding）/ sqlfluff（`infra/db`。Drizzle 生成 SQL に lint をかけたければ後で別途検討）。
+- 削除済み: ruff（`^embedding/`）/ sqlfluff（`^infra/db/`）。どちらも削除済みディレクトリを見ていたため、TrendScope 撤去の一部として除去した。Drizzle 生成 SQL に lint をかけたくなったら後で別途検討する。
+- `prettier` / `eslint` の `files:` は `^(apps|packages)/`（`workers` は撤去済み）。
 
 ## 学習トピック
 
